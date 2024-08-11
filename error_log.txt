@@ -1,0 +1,1 @@
+2024-08-10 10:29:03 - /myfiles/utils.lua:132: attempt to compare number with nil
