@@ -1,0 +1,162 @@
+-- communicator DEV1.0
+
+-- Import other modules using dofile
+local command_list = dofile("myfiles/command_list.lua")
+local utils = dofile("myfiles/utils.lua")
+local config = dofile("myfiles/config.lua")
+--local inventory_mgr = dofile("myfiles/inventory_mgr.lua")
+local locations_mgr = dofile("myfiles/locations_mgr.lua")
+local quarry_main = dofile("myfiles/quarry_main.lua")
+
+-- Define the functions within the module
+local function quarry(boundary)
+    -- Save start and inventory locations
+    locations_mgr.setHome()
+    locations_mgr.setFuelStorage()
+
+    local startYLevel = select(2, gps.locate(2))
+    for y = startYLevel, startYLevel - config.quarrySize.y, -1 do
+        if inventory_mgr.checkInventory() then
+            returnToStart()
+            unloadItems()
+            refuelTurtle()
+        end
+        quarryLayer(y, boundary)
+    end
+    returnToStart()
+    unloadItems()
+end
+
+local function quarryLayer(yLevel, boundary)
+    -- Mine one layer of the quarry
+    for x = 1, config.quarrySize.x do
+        for z = 1, config.quarrySize.z do
+            local currentX, currentY, currentZ = gps.locate(2)
+            if currentX and currentZ and utils.isWithinBoundary(currentX, currentZ, boundary) then
+                if turtle.detectDown() then
+                    turtle.digDown()
+                end
+                if z < config.quarrySize.z then
+                    if x % 2 == 1 then
+                        turtle.forward()
+                    else
+                        turtle.back()
+                    end
+                end
+            end
+        end
+        if x < config.quarrySize.x then
+            if x % 2 == 1 then
+                turtle.turnRight()
+                turtle.forward()
+                turtle.turnRight()
+            else
+                turtle.turnLeft()
+                turtle.forward()
+                turtle.turnLeft()
+            end
+        end
+    end
+end
+
+local function returnToStart()
+    local homeX, homeY, homeZ = locations_mgr.getHome()
+    if not homeX or not homeY or not homeZ then
+        error("Unable to retrieve home location.")
+    end
+    utils.moveTo(homeX, homeY, homeZ)
+end
+
+local function unloadItems()
+    for i = 1, 16 do
+        if turtle.getItemCount(i) > 0 then
+            turtle.select(i)
+            turtle.drop() -- Assuming the turtle is positioned above a chest
+        end
+    end
+    turtle.select(1)
+end
+
+local function test()
+    quarry_main.testFuelInv()
+end
+
+local function test1()
+    turtle.back(5)
+    utils.sendStatus("Moved to staging - finding inventories.")
+    locations_mgr.setHome()
+    utils.sendStatus("Set home success, file available.")
+
+    locations_mgr.getHome()
+    utils.sendStatus("Get home success, setting fuel storage.")
+
+    locations_mgr.setFuelStorage("minecraft:charcoal", 10)
+    utils.sendStatus("Fuel storage set.")
+
+    utils.sendStatus("Retrieving fuel storage location.")
+    locations_mgr.getFuelStorage()
+
+    utils.sendStatus("Fuel storage retrieved. Setting product storage.")
+
+    locations_mgr.setProductStorage("minecraft:iron_ingot", 10)
+    utils.sendStatus("Product storage set. Testing fuel function.")
+    
+    quarry_main.testFuelInv()
+    sleep(1)
+    utils.sendStatus("Fuel program operational. Testing unload function.")
+
+    
+    utils.sendStatus("Testing complete.")
+end
+
+local function find()
+    local nowX, nowY, nowZ = utils.initializeGPS()
+    local facing = utils.getOrientation()
+
+    local located = findX, findY, findZ, facing
+    local tabulated = tableToString(located)
+
+    utils.sendStatus(tabulated)
+end
+
+local function tableToString(t)
+    local str = ""
+    for key, value in pairs(t) do
+        str = str .. key .. ": " .. value .. "\n"
+    end
+    return str
+end
+
+local function printList(cmdlist)
+    local sending = tableToString(cmdlist)
+
+    utils.sendStatus(sending)
+end
+
+-- Public API
+local M = {
+    listenForCommands = function(boundary)
+        rednet.open(config.modemSide)
+        while true do
+            local senderID, message, protocol = rednet.receive(config.commandChannel)
+            sleep(0.05)
+            if message == "quarry" then
+                quarry_main.quarry()
+            elseif message == "refuel" then
+                refuelTurtle()
+            elseif message == "unload" then
+                unloadItems()
+            elseif message == "find" then
+                find()
+            elseif message == "test" then
+                test()
+            elseif message == "list" then
+                printList(command_list)
+            else
+                print("Unknown command received.")
+            end
+        end
+    end
+}
+
+return M
